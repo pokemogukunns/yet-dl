@@ -1,57 +1,87 @@
-import urllib.parse
-import json
-import requests  # requestsライブラリを使用して外部APIからデータを取得
+import fetch from 'node-fetch'; // fetchモジュールをインポート
+import { URLSearchParams } from 'url';
 
-def get_data(videoid):
-    global logs
+// APIエンドポイントリスト
+const apis = [
+  'https://youtube.privacyplz.org/',
+  'https://inv.nadeko.net/'
+];
 
-    # APIリクエストURL（複数のAPIを使う場合はAPIリストを定義し、ランダムに選択してリクエストする）
-    apis = [
-        "https://youtube.privacyplz.org/",
-        "https://inv.nadeko.net/"
-    ]
+const maxApiWaitTime = 5000; // 最大待機時間 (ミリ秒)
+const maxTime = 15 * 1000; // 最大リクエスト時間 (ミリ秒)
+
+async function apirequest(url) {
+  const startTime = Date.now();
+  
+  // APIリストの各APIにリクエストを順番に送信
+  for (let i = 0; i < apis.length; i++) {
+    const api = apis[i];
     
-    # ランダムにAPIを選択
-    api_url = apis[0]  # 最初のAPIを使う場合。別途ランダム選択も可能。
+    if (Date.now() - startTime >= maxTime - 1000) {
+      break;
+    }
 
-    try:
-        # YouTube動画の情報をAPIから取得
-        response = requests.get(f"{api_url}/api/v1/videos/{urllib.parse.quote(videoid)}")
-        
-        # エラーチェック
-        if response.status_code != 200:
-            raise Exception(f"Failed to fetch data from {api_url}, status code: {response.status_code}")
-        
-        # JSONデータに変換
-        t = response.json()
+    try {
+      // APIリクエスト
+      const res = await fetch(api + url, { timeout: maxApiWaitTime });
 
-        # 必要なデータを整形
-        recommended_videos = [
-            {
-                "id": i["videoId"],
-                "title": i["title"],
-                "authorId": i["authorId"],
-                "author": i["author"]
-            }
-            for i in t.get("recommendedVideos", [])
-        ]
-        
-        # ストリームURLを逆順にして上位2つを取得
-        stream_urls = list(reversed([i["url"] for i in t.get("formatStreams", [])]))[:2]
-
-        # 返すデータ
-        result = {
-            "recommendedVideos": recommended_videos,
-            "streamUrls": stream_urls,
-            "description": t.get("descriptionHtml", "").replace("\n", "<br>"),
-            "title": t.get("title"),
-            "authorId": t.get("authorId"),
-            "author": t.get("author"),
-            "authorThumbnail": t["authorThumbnails"][-1]["url"] if t.get("authorThumbnails") else None
+      if (res.ok) {
+        const data = await res.json();
+        if (isJson(data)) {
+          return data; // 正常なレスポンスを返す
+        } else {
+          console.error(`APIのレスポンスがJSONではありません: ${api}`);
         }
+      } else {
+        console.error(`エラー: ${api}`);
+      }
+    } catch (error) {
+      console.error(`タイムアウトまたはエラー: ${api}`, error);
+    }
 
-        return result
+    // APIリストの順番を入れ替え
+    apis.push(apis.shift());
+  }
 
-    except Exception as e:
-        logs.append(str(e))  # エラーログを記録
-        return {"error": str(e)}
+  throw new Error("全てのAPIがタイムアウトしました");
+}
+
+// JSONかどうかをチェックする関数
+function isJson(data) {
+  try {
+    return typeof data === 'object' && data !== null;
+  } catch (error) {
+    return false;
+  }
+}
+
+// 動画データを取得する関数
+async function getData(videoId) {
+  try {
+    const data = await apirequest(`api/v1/videos/${encodeURIComponent(videoId)}`);
+    
+    return {
+      recommendedVideos: data.recommendedVideos.map((video) => ({
+        id: video.videoId,
+        title: video.title,
+        authorId: video.authorId,
+        author: video.author
+      })),
+      formatStreams: data.formatStreams.reverse().slice(0, 2).map((stream) => stream.url),
+      description: data.descriptionHtml.replace("\n", "<br>"),
+      title: data.title,
+      authorId: data.authorId,
+      author: data.author,
+      authorThumbnail: data.authorThumbnails[data.authorThumbnails.length - 1].url
+    };
+  } catch (error) {
+    console.error("動画データの取得に失敗しました:", error);
+  }
+}
+
+// 使用例
+(async () => {
+  const videoId = 'sample_video_id';
+  const videoData = await getData(videoId);
+  console.log(videoData);
+})();
