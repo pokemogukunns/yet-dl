@@ -1,0 +1,19 @@
+{
+  "name": "youtube-downloader",
+  "version": "1.0.0",
+  "description": "YouTube video info API",
+  "main": "api/youtube.js",
+  "scripts": {
+    "dev": "vercel dev", 
+    "deploy": "vercel deploy"
+  },
+  "dependencies": {
+    "node-fetch": "^2.6.7"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": "16.x"
+  },
+  "author": "",
+  "license": "ISC"
+}
