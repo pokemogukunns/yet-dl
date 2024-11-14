@@ -1,53 +1,57 @@
-const fetch = require('node-fetch');
+import urllib.parse
+import json
+import requests  # requestsライブラリを使用して外部APIからデータを取得
 
-// YouTube Data APIキーを設定
-const YOUTUBE_API_KEY = 'YOUR_YOUTUBE_API_KEY';  // あなたのAPIキーを入力
+def get_data(videoid):
+    global logs
 
-module.exports = async (req, res) => {
-  const { youtubeUrl } = req.query;
-
-  if (!youtubeUrl) {
-    return res.status(400).json({ error: 'YouTube URL is required' });
-  }
-
-  // YouTube URLから動画IDを抽出
-  const videoId = extractVideoId(youtubeUrl);
-  if (!videoId) {
-    return res.status(400).json({ error: 'Invalid YouTube URL' });
-  }
-
-  // YouTube Data APIを使って動画情報を取得
-  const apiUrl = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&key=${YOUTUBE_API_KEY}&part=snippet,contentDetails,statistics`;
-  
-  try {
-    const response = await fetch(apiUrl);
-    const data = await response.json();
+    # APIリクエストURL（複数のAPIを使う場合はAPIリストを定義し、ランダムに選択してリクエストする）
+    apis = [
+        "https://youtube.privacyplz.org/",
+        "https://inv.nadeko.net/"
+    ]
     
-    if (data.error) {
-      return res.status(500).json({ error: data.error.message });
-    }
+    # ランダムにAPIを選択
+    api_url = apis[0]  # 最初のAPIを使う場合。別途ランダム選択も可能。
 
-    const videoInfo = data.items[0];
-    const videoDetails = {
-      title: videoInfo.snippet.title,
-      description: videoInfo.snippet.description,
-      url: `https://www.youtube.com/watch?v=${videoId}`,
-      thumbnail: videoInfo.snippet.thumbnails.high.url,
-      duration: videoInfo.contentDetails.duration, // ISO 8601形式での動画の長さ
-      views: videoInfo.statistics.viewCount,
-      // ストリームURL（yt-dlpなどの外部ツールを使用しない代わりに、仮のURLを提供）
-      streamUrl: `https://www.youtube.com/watch?v=${videoId}`  // ここでは仮のURLとしてYouTubeの視聴ページURLを返します
-    };
+    try:
+        # YouTube動画の情報をAPIから取得
+        response = requests.get(f"{api_url}/api/v1/videos/{urllib.parse.quote(videoid)}")
+        
+        # エラーチェック
+        if response.status_code != 200:
+            raise Exception(f"Failed to fetch data from {api_url}, status code: {response.status_code}")
+        
+        # JSONデータに変換
+        t = response.json()
 
-    return res.status(200).json(videoDetails);
-  } catch (error) {
-    return res.status(500).json({ error: 'Failed to fetch video details' });
-  }
-};
+        # 必要なデータを整形
+        recommended_videos = [
+            {
+                "id": i["videoId"],
+                "title": i["title"],
+                "authorId": i["authorId"],
+                "author": i["author"]
+            }
+            for i in t.get("recommendedVideos", [])
+        ]
+        
+        # ストリームURLを逆順にして上位2つを取得
+        stream_urls = list(reversed([i["url"] for i in t.get("formatStreams", [])]))[:2]
 
-// YouTube URLから動画IDを抽出する関数
-function extractVideoId(url) {
-  const regex = /(?:https?:\/\/(?:www\.)?youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S+?v=|(?:watch\?v=|[\w-]{11}))/;
-  const match = url.match(regex);
-  return match ? match[1] : null;
-}
+        # 返すデータ
+        result = {
+            "recommendedVideos": recommended_videos,
+            "streamUrls": stream_urls,
+            "description": t.get("descriptionHtml", "").replace("\n", "<br>"),
+            "title": t.get("title"),
+            "authorId": t.get("authorId"),
+            "author": t.get("author"),
+            "authorThumbnail": t["authorThumbnails"][-1]["url"] if t.get("authorThumbnails") else None
+        }
+
+        return result
+
+    except Exception as e:
+        logs.append(str(e))  # エラーログを記録
+        return {"error": str(e)}
